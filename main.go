@@ -10,20 +10,35 @@ import (
 )
 
 const (
-	Interface  = "en0"
-	statusUp   = "UP"
-	statusDown = "DOWN"
+	monInterface = "en0"
+	statusUp     = "UP"
+	statusDown   = "DOWN"
 )
 
+// Host capture a host info in net
 type Host struct {
 	IP       string
 	MAC      string
 	Hostname string
-	Data     []string
+	Pings    []Event
 }
 
 func (h Host) String() string {
 	return fmt.Sprintf("Host %s has IP %s, MAC: %s", h.Hostname, h.IP, h.MAC)
+}
+
+func (h *Host) checkPing() error {
+	e := Event{When: time.Now()}
+	out, err := exec.Command("nmap", "-sP", h.IP).Output()
+	if err != nil {
+		return err
+	}
+	if strings.Contains(string(out), "1 host up") {
+		e.Up = true
+	}
+	h.Pings = append(h.Pings, e)
+	log.Println(h.Pings)
+	return nil
 }
 
 func handleErr(err error) {
@@ -47,7 +62,7 @@ func arpEntries() []Host {
 	strOut := string(out)
 	lines := strings.Split(strOut, "\n")
 	for _, line := range lines {
-		if strings.Contains(line, Interface) {
+		if strings.Contains(line, monInterface) {
 			h := Host{}
 			h.IP, h.MAC = getIPAndMAC(line)
 			hosts = append(hosts, h)
@@ -69,7 +84,7 @@ func myLANIP() (string, error) {
 		handleErr(err)
 	}
 	for _, ifi := range ifis {
-		if ifi.Name == Interface {
+		if ifi.Name == monInterface {
 			addrs, err := ifi.Addrs()
 			if err != nil {
 				handleErr(err)
@@ -105,49 +120,37 @@ func nmapEntries() {
 	log.Println(string(out))
 }
 
+// Event capture
 type Event struct {
 	When time.Time
 	Up   bool
 }
 
 func (e Event) String() string {
-	var s string
+	s := StatusDown
 	if e.Up {
 		s = statusUp
-	} else {
-		s = statusDown
 	}
-
 	return fmt.Sprintf("Event %s at %s", s, e.When)
 }
-func checkPing(h Host) Event {
-	out, err := exec.Command("nmap", "-sP", h.IP).Output()
-	if err == nil {
-		if strings.Contains(string(out), "1 host up") {
-			return Event{When: time.Now(), Up: true}
-		}
-	}
-	return Event{When: time.Now(), Up: false}
-}
 
-func checkAll(hosts []Host, ec chan Event, hc chan Host) {
+func checkAll(hosts []Host) {
+	errChan := make(chan error)
 	for _, host := range hosts {
-		ec <- checkPing(host)
-		hc <- host
+		go func() {
+			errChan <- host.checkPing()
+		}()
 	}
-	close(ec)
-	close(hc)
+	close(errChan)
+
+	for e := range errChan {
+		handleErr(e)
+	}
 }
 
 func main() {
 	hosts := arpEntries()
-	eventChan := make(chan Event)
-	hostChan := make(chan Host)
-	go checkAll(hosts, eventChan, hostChan)
-	for i := range eventChan {
-		log.Println(<-hostChan, i)
-	}
-
+	checkAll(hosts)
 	// TODO add nmap entries to ping check
 	nmapEntries()
 
