@@ -6,21 +6,39 @@ import (
 	"net"
 	"os/exec"
 	"strings"
+	"time"
 )
 
 const (
-	Interface = "en0"
+	monInterface = "en0"
+	statusUp     = "UP"
+	statusDown   = "DOWN"
 )
 
+// Host capture a host info in net
 type Host struct {
 	IP       string
 	MAC      string
 	Hostname string
-	Data     []string
+	Pings    []Event
 }
 
 func (h Host) String() string {
 	return fmt.Sprintf("Host %s has IP %s, MAC: %s", h.Hostname, h.IP, h.MAC)
+}
+
+func (h *Host) checkPing() error {
+	e := Event{When: time.Now()}
+	out, err := exec.Command("nmap", "-sP", h.IP).Output()
+	if err != nil {
+		return err
+	}
+	if strings.Contains(string(out), "1 host up") {
+		e.Up = true
+	}
+	h.Pings = append(h.Pings, e)
+	log.Println(h.Pings)
+	return nil
 }
 
 func handleErr(err error) {
@@ -44,7 +62,7 @@ func arpEntries() []Host {
 	strOut := string(out)
 	lines := strings.Split(strOut, "\n")
 	for _, line := range lines {
-		if strings.Contains(line, Interface) {
+		if strings.Contains(line, monInterface) {
 			h := Host{}
 			h.IP, h.MAC = getIPAndMAC(line)
 			hosts = append(hosts, h)
@@ -66,7 +84,7 @@ func myLANIP() (string, error) {
 		handleErr(err)
 	}
 	for _, ifi := range ifis {
-		if ifi.Name == Interface {
+		if ifi.Name == monInterface {
 			addrs, err := ifi.Addrs()
 			if err != nil {
 				handleErr(err)
@@ -87,16 +105,59 @@ func myLANIP() (string, error) {
 	return "", err
 }
 
+func nmapScanAll() {
+	myIP, err := myLANIP()
+	handleErr(err)
+	out, err := exec.Command("nmap", "-A", "-T4", myIP).Output()
+	handleErr(err)
+	log.Println(string(out))
+}
 func nmapEntries() {
 	myIP, err := myLANIP()
 	handleErr(err)
-	out, err := exec.Command("nmap", "-sP", myIP).Output()
+	out, err := exec.Command("nmap", "-sP", "-PA21,22,25,3389", myIP).Output()
 	handleErr(err)
 	log.Println(string(out))
 }
 
+// Event capture
+type Event struct {
+	When time.Time
+	Up   bool
+}
+
+func (e Event) String() string {
+	s := StatusDown
+	if e.Up {
+		s = statusUp
+	}
+	return fmt.Sprintf("Event %s at %s", s, e.When)
+}
+
+func checkAll(hosts []Host) {
+	errChan := make(chan error)
+	for _, host := range hosts {
+		go func() {
+			errChan <- host.checkPing()
+		}()
+	}
+	close(errChan)
+
+	for e := range errChan {
+		handleErr(e)
+	}
+}
+
 func main() {
 	hosts := arpEntries()
-	display(hosts)
+	checkAll(hosts)
+	// TODO add nmap entries to ping check
 	nmapEntries()
+
+	// For every 5 mins, run a check and save result to db.
+	// Loop over all host in buckets and all host that nmap can ping
+	// If a host change its state (leaving), save data to db and report.
+	// If host is new, add it
+	// If host does not change, do nothing
+	nmapScanAll()
 }
