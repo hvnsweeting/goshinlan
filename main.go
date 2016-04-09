@@ -130,22 +130,22 @@ func checkPing(h Host) Event {
 	return Event{When: time.Now(), Up: false}
 }
 
-func checkAll(hosts []Host, ch chan Event, chost chan Host) {
+func checkAll(hosts []Host, ec chan Event, hc chan Host) {
 	for _, host := range hosts {
-		ch <- checkPing(host)
-		chost <- host
+		ec <- checkPing(host)
+		hc <- host
 	}
-	close(ch)
-	close(chost)
+	close(ec)
+	close(hc)
 }
 
 func main() {
 	hosts := arpEntries()
-	ch := make(chan Event)
-	chost := make(chan Host)
-	go checkAll(hosts, ch, chost)
-	for i := range ch {
-		log.Println(<-chost, i)
+	eventChan := make(chan Event)
+	hostChan := make(chan Host)
+	go checkAll(hosts, eventChan, hostChan)
+	for i := range eventChan {
+		log.Println(<-hostChan, i)
 	}
 
 	// TODO add nmap entries to ping check
