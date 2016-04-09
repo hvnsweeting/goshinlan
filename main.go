@@ -10,7 +10,9 @@ import (
 )
 
 const (
-	Interface = "en0"
+	Interface  = "en0"
+	statusUp   = "UP"
+	statusDown = "DOWN"
 )
 
 type Host struct {
@@ -111,9 +113,9 @@ type Event struct {
 func (e Event) String() string {
 	var s string
 	if e.Up {
-		s = "UP"
+		s = statusUp
 	} else {
-		s = "DOWN"
+		s = statusDown
 	}
 
 	return fmt.Sprintf("Event %s at %s", s, e.When)
