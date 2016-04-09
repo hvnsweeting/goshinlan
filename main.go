@@ -127,13 +127,10 @@ type Event struct {
 }
 
 func (e Event) String() string {
-	var s string
+	s := StatusDown
 	if e.Up {
 		s = statusUp
-	} else {
-		s = statusDown
 	}
-
 	return fmt.Sprintf("Event %s at %s", s, e.When)
 }
 
