@@ -122,10 +122,10 @@ func checkPing(h Host) Event {
 	out, err := exec.Command("nmap", "-sP", h.IP).Output()
 	if err == nil {
 		if strings.Contains(string(out), "1 host up") {
-			return Event{time.Now(), true}
+			return Event{When: time.Now(), Up: true}
 		}
 	}
-	return Event{time.Now(), false}
+	return Event{When: time.Now(), Up: false}
 }
 
 func checkAll(hosts []Host, ch chan Event, chost chan Host) {
