@@ -127,7 +127,7 @@ type Event struct {
 }
 
 func (e Event) String() string {
-	s := StatusDown
+	s := statusDown
 	if e.Up {
 		s = statusUp
 	}
